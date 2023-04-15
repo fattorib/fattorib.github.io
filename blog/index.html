@@ -79,9 +79,7 @@ pagination:
           {{ tag[0] }}
 
               {% for post in tag[1] %}
-              <!-- {{ post.title }} -->
-              <a href="{{ tag | slugify | prepend: '/blog/tag/' | prepend: site.baseurl}}">
-                <i class="fas fa-hashtag fa-sm"></i> {{ post.title }}</a> &nbsp;
+              {{ post.title }}
               {% endfor %} 
 
           {% endfor %}
