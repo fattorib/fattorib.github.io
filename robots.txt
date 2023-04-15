@@ -1,4 +1,4 @@
 User-agent: *
 Disallow:
 
-Sitemap: benfattori.com/al-folio/sitemap.xml
+Sitemap: benfattori.com/sitemap.xml
