@@ -20,4 +20,4 @@ Previously, I spent time at Risklab working on machine learning models for portf
 
 I graduated with a Bachelor's degree in Mathematics and Physics from the University of Toronto. 
 
-You can find my resume [here](https://drive.google.com/file/d/1Cjp8qxPPlyPUSKKWj4UqAaUl9j4aal6z/view) (Updated September 2022)
+You can find my resume [here](https://drive.google.com/file/d/1ToM_wgh8718W7GwO78DowAcKf3gm4PMa/view) (Updated April 2023)
