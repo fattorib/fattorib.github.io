@@ -20,4 +20,4 @@ Previously, I spent time at Risklab working on [machine learning models for port
 
 I completed my undergradaute degree in Mathematics and Physics (Math Specialist/Physics Major) at the University of Toronto.
 
-You can find my resume [here](https://drive.google.com/file/d/1ToM_wgh8718W7GwO78DowAcKf3gm4PMa/view) (Updated April 2023)
+You can find my resume [here](https://drive.google.com/file/d/1ToM_wgh8718W7GwO78DowAcKf3gm4PMa/view) (Updated November 2023)
