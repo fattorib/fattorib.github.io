@@ -105,14 +105,17 @@ blog_name: posts
 blog_nav_title: posts # your blog must have a title for it to be displayed in the nav bar
 blog_description: 
 
+permalink: pretty
+
 # Pagination
 pagination:
   enabled: true
-  collection: posts
-  per_page: 5  # or your preferred number
-  sort_field: date
+  per_page: 20
+  permalink: /page/:num/
+  title: ':title - page :num'
+  limit: 0
+  sort_field: 'date'
   sort_reverse: true
-  verbose: true
 
 related_blog_posts:
   enabled: true
