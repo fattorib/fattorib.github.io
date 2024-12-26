@@ -1,11 +1,179 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en"><generator uri="https://jekyllrb.com/" version="4.3.4">Jekyll</generator><link href="https://fattorib.github.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://fattorib.github.io/" rel="alternate" type="text/html" hreflang="en" /><updated>2024-09-25T21:47:27+00:00</updated><id>https://fattorib.github.io/feed.xml</id><title type="html">blank</title><subtitle>A simple, whitespace theme for academics. Based on [*folio](https://github.com/bogoli/-folio) design.
-</subtitle><entry><title type="html">ZeRO Optimizer Sharding with xmap and pjit</title><link href="https://fattorib.github.io/blog/2023/jax-pmap/" rel="alternate" type="text/html" title="ZeRO Optimizer Sharding with xmap and pjit" /><published>2023-03-31T15:59:00+00:00</published><updated>2023-03-31T15:59:00+00:00</updated><id>https://fattorib.github.io/blog/2023/jax-pmap</id><content type="html" xml:base="https://fattorib.github.io/blog/2023/jax-pmap/"><![CDATA[<p><strong>TL;DR</strong> I improve upon my earlier codebase by implementing ZeRO-1 optimizer sharding using a combination of <code class="language-plaintext highlighter-rouge">xmap</code> and <code class="language-plaintext highlighter-rouge">pjit</code>. The resultant method is more performant and scales better across multiple TPU hosts achieving 67% MFU on a TPU v3-32. I use this method to train a 1.3B parameter decoder-only transformer on 200B tokens. The codebase I wrote can be found <a href="https://github.com/fattorib/ZeRO-transformer">here</a>.</p>
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en"><generator uri="https://jekyllrb.com/" version="4.3.4">Jekyll</generator><link href="https://fattorib.github.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://fattorib.github.io/" rel="alternate" type="text/html" hreflang="en" /><updated>2024-12-26T14:37:01+00:00</updated><id>https://fattorib.github.io/feed.xml</id><title type="html">blank</title><subtitle>A simple, whitespace theme for academics. Based on [*folio](https://github.com/bogoli/-folio) design.
+</subtitle><entry><title type="html">A fast RG-LRU Kernel</title><link href="https://fattorib.github.io/blog/2024/rg-lru/" rel="alternate" type="text/html" title="A fast RG-LRU Kernel" /><published>2024-12-26T04:00:00+00:00</published><updated>2024-12-26T04:00:00+00:00</updated><id>https://fattorib.github.io/blog/2024/rg-lru</id><content type="html" xml:base="https://fattorib.github.io/blog/2024/rg-lru/"><![CDATA[<h1 id="a-fast-rg-lru-kernel">A fast RG-LRU Kernel</h1>
+
+<p><strong>TL;DR:</strong> I develop a IO-aware kernel for the RG-LRU in Triton. When training on sequences greater than 4K tokens, the kernel is faster than PyTorch’s Flash Attention 2 implementation.</p>
+
+<h2 id="introduction">Introduction</h2>
+
+<p>Hawk is an RNN proposed by Google Deepmind in “<strong>Griffin: Mixing Gated Linear Recurrences with Local Attention for Efficient Language Models”.</strong><sup id="fnref:1"><a href="#fn:1" class="footnote" rel="footnote" role="doc-noteref">1</a></sup> At its core is the Real-Gated Linear Recurrent Unit (RG-LRU) layer, a <em>linear</em> and <em>diagonal</em> recurrence. A linear and diagonal recurrence means each element in the hidden state only depends on its corresponding element from the previous timestep.</p>
+
+<p>The equations for computing the recurrence are:</p>
+
+\[\begin{align*}
+r_t &amp;= \sigma(W_a x_t + b_a) \\
+i_t &amp;= \sigma(W_x x_t + b_x) \\
+a_t &amp;= a^{C r_t} \\
+h_t &amp;= a_t \odot h_{t-1} + \sqrt{1 -  a_{t}^2} \odot (i_t \odot x_t)
+\end{align*}\]
+
+<p>Where \(x_t\) is of shape <code class="language-plaintext highlighter-rouge">[B, L, R]</code> , \(h_t\) is of shape <code class="language-plaintext highlighter-rouge">[B, R]</code> and \(C\) is a trainable parameter of size <code class="language-plaintext highlighter-rouge">R</code>. In PyTorch psuedocode, the forward pass is</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="sh">"""</span><span class="s">Example RG-LRU forward pass:
+B: batch size
+L: sequence length 
+D: model dimension
+R: Recurrent dimension
+</span><span class="sh">"""</span>
+
+<span class="c1"># forward pass
+</span><span class="n">gate_x_BLR</span> <span class="o">=</span> <span class="nf">sigmoid</span><span class="p">(</span><span class="n">x_BLR</span> <span class="o">@</span> <span class="n">W_xRR</span><span class="p">)</span>
+<span class="n">gate_a_BLR</span> <span class="o">=</span> <span class="nf">sigmoid</span><span class="p">(</span><span class="n">x_BLR</span> <span class="o">@</span> <span class="n">W_aRR</span><span class="p">)</span>
+
+<span class="n">log_a_BLR</span> <span class="o">=</span> <span class="o">-</span><span class="mf">8.0</span> <span class="o">*</span> <span class="n">gate_a_BLR</span> <span class="o">*</span> <span class="nf">softplus</span><span class="p">(</span><span class="n">C_R</span><span class="p">)</span>
+<span class="n">a_BLR</span> <span class="o">=</span> <span class="nf">exp</span><span class="p">(</span><span class="n">log_a_BLR</span><span class="p">)</span>
+<span class="n">a_square_BLR</span> <span class="o">=</span> <span class="nf">exp</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">log_a_BLR</span><span class="p">)</span>
+<span class="n">gated_x_BLR</span> <span class="o">=</span> <span class="n">x_BLR</span> <span class="o">*</span> <span class="n">gate_x_BLR</span>
+
+<span class="n">normalized_x_BLR</span> <span class="o">=</span> <span class="n">gated_x_BLR</span> <span class="o">*</span> <span class="nf">sqrt</span><span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">a_square_BLR</span><span class="p">)</span>
+
+<span class="c1"># compute linear recurrence -&gt; fused into single kernel in Pallas or Triton
+</span><span class="n">h_t_BR</span> <span class="o">=</span> <span class="nf">zeros</span><span class="p">(</span><span class="n">B</span><span class="p">,</span><span class="n">R</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="n">L</span><span class="p">):</span>
+  <span class="c1"># load a_BLR[:,i] and normalized_x_BLR[:,i] to SRAM
+</span>  <span class="n">h_t_BR</span> <span class="o">=</span> <span class="n">a_BLR</span><span class="p">[:,</span><span class="n">i</span><span class="p">]</span><span class="o">*</span><span class="n">h_t_BR</span> <span class="o">+</span> <span class="n">normalized_x_BLR</span><span class="p">[:,</span><span class="n">i</span><span class="p">]</span> 
+  <span class="c1"># write h_t_BR to HBM
+</span></code></pre></div></div>
+
+<p>As the recurrence itself performs no matrix-multiplications and only elementwise operations, it follows that the runtime of this kernel will be memory-bound on any GPU or TPU. The authors develop a custom Pallas kernel to compute this linear recurrence, which can be viewed on DM’s “RecurrentGemma” Github <a href="https://github.com/google-deepmind/recurrentgemma/blob/main/recurrentgemma/jax/pallas.py#L475">here</a>. On the systems side, an interesting takeaway from this paper is that a “naive” fused linear scan kernel actually outperforms the more parallelizeable associative scan kernel. <a href="https://x.com/SonglinYang4/status/1763598848130453728">Others have noticed similar results for GPUs</a>, so the original kernel I wrote was a simple linear scan of the form \(h_t = \alpha_t \odot h_{t-1} + \beta_t\) where \(\alpha_t\) and \(\beta_t\) were the respective recurrent parameters, pre-computed.</p>
+
+<p>Since I don’t have access to TPUs I re-implemented Hawk and the linear scan kernel it uses in PyTorch and Triton<sup id="fnref:2"><a href="#fn:2" class="footnote" rel="footnote" role="doc-noteref">2</a></sup>. You can view the initial linear scan kernel <a href="https://github.com/fattorib/hawk-pytorch/blob/b5ce108d89c80457ca4b36a514b57d08a6bb71a0/hawk/scan.py">here</a>.</p>
+
+<p>One thing that might stand out is that before we even get to the actual linear recurrence, we are performing many elementwise operations to get the recurrent parameters ready. While its likely that XLA or <code class="language-plaintext highlighter-rouge">torch.compile</code> could fuse together some of these operations together, we can do a lot better than this by fully re-writing the kernel to use two techniques: manual <strong>operator fusion</strong> and <strong>activation recomputation</strong>.</p>
+
+<h2 id="1-operator-fusion">1. Operator Fusion</h2>
+
+<p>The first optimization we apply is to fuse all elementwise operations into the linear scan kernel itself. In pseudocode, our new RG-LRU computation would look as follows.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># forward pass
+</span><span class="n">gate_x_no_act_BLR</span> <span class="o">=</span> <span class="n">x_BLR</span> <span class="o">@</span> <span class="n">W_xRR</span>
+<span class="n">gate_a_no_act_BLR</span> <span class="o">=</span> <span class="n">x_BLR</span> <span class="o">@</span> <span class="n">W_aRR</span>
+
+<span class="c1"># compute linear recurrence -&gt; fused into single kernel in Triton
+</span><span class="n">h_t_BR</span> <span class="o">=</span> <span class="nf">zeros</span><span class="p">(</span><span class="n">B</span><span class="p">,</span><span class="n">R</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nf">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="n">L</span><span class="p">):</span>
+
+  <span class="c1"># load gate_x_no_act_BLR[:,i], gate_a_no_act_BLR[:,i], C_R to SRAM 
+</span>  
+  <span class="c1"># Start of computation in SRAM
+</span>  <span class="n">gate_x_BR</span> <span class="o">=</span> <span class="nf">sigmoid</span><span class="p">(</span><span class="n">gate_x_no_act_BLR</span><span class="p">[:,</span><span class="n">i</span><span class="p">])</span>
+  <span class="n">gate_a_BR</span> <span class="o">=</span> <span class="nf">sigmoid</span><span class="p">(</span><span class="n">gate_a_no_act_BLR</span><span class="p">[:,</span><span class="n">i</span><span class="p">])</span>
+
+  <span class="n">log_a_BR</span> <span class="o">=</span> <span class="o">-</span><span class="mf">8.0</span> <span class="o">*</span> <span class="n">gate_a_BR</span> <span class="o">*</span> <span class="nf">softplus</span><span class="p">(</span><span class="n">C_R</span><span class="p">)</span>
+  <span class="n">a_BR</span> <span class="o">=</span> <span class="nf">exp</span><span class="p">(</span><span class="n">log_a_BR</span><span class="p">)</span>
+  <span class="n">a_square_BR</span> <span class="o">=</span> <span class="nf">exp</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">log_a_BR</span><span class="p">)</span>
+  <span class="n">gated_x_BR</span> <span class="o">=</span> <span class="n">x_BLR</span><span class="p">[:,</span><span class="n">i</span><span class="p">]</span> <span class="o">*</span> <span class="n">gate_x_BR</span>
+
+  <span class="n">normalized_x_BR</span> <span class="o">=</span> <span class="n">gated_x_BR</span> <span class="o">*</span> <span class="nf">sqrt</span><span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">a_square_BR</span><span class="p">)</span>
+  <span class="n">h_t_BR</span> <span class="o">=</span> <span class="n">a_BLR</span><span class="o">*</span><span class="n">h_t_BR</span> <span class="o">+</span> <span class="n">normalized_x_BR</span> 
+  <span class="c1"># End of computation in SRAM
+</span>  
+  <span class="c1"># write h_t_BR to HBM
+</span></code></pre></div></div>
+
+<p>Assuming half-precision weights and activations, the unfused RG-LRU layer reads <code class="language-plaintext highlighter-rouge">26BLR + 4RR + 2R</code> bytes and writes <code class="language-plaintext highlighter-rouge">22BLR</code> bytes for a total of <code class="language-plaintext highlighter-rouge">48BLR + 4RR + 2R</code> bytes. The fused RG-LRU layer reads <code class="language-plaintext highlighter-rouge">4BLR + 4RR + 2R</code> bytes and writes <code class="language-plaintext highlighter-rouge">2BLR</code> bytes for a total of <code class="language-plaintext highlighter-rouge">6BLR + 4RR + 2R</code>. For all models considered, L will be greater than or equal to R and B &gt; 1. So while the memory complexity for both kernels is still $\mathcal{O}(BLR)$, the fused kernel reduces the constant factor from $48$ to $6$ leading to the fused kernel reading and writing roughly one eighth the bytes of the unfused kernel. As the runtime of this layer is memory bandwidth bound, we can expect large speedups. When implemented in Triton, this speedup over the initial kernel is large and for contexts greater than 6K tokens, we are even faster than PyTorch’s Flash Attention 2 (called via <code class="language-plaintext highlighter-rouge">scaled_dot_product_attention</code>):</p>
+
+<div style="text-align: center">
+<img src="img/scan_forward.png" alt="forward" style="width: 100%;" />
+</div>
+
+<p><em>All benchmarks were performed on a single 40GB A100 from Lambda Labs with PyTorch 2.5.1 and Triton 3.1.0.</em></p>
+
+<h2 id="2-activation-recomputation">2. Activation Recomputation</h2>
+
+<p>While fusing essentially all the operations but the matmuls into the forward recurrence works well for inference (and really, only the first step of the inference, since this is… you know… an RNN), it is not possible to use this technique during training since we are not storing any activations needed to compute the gradients of the trainable parameters.</p>
+
+<p>To use this fused kernel for training, we need utilize a technique called <strong>Activation Recomputation</strong> which works by “recomputing” certain intermediate activations needed for gradient computations in the backward pass instead of saving them in the forward pass, this is one of the main optimizations behind Flash Attention<sup id="fnref:3"><a href="#fn:3" class="footnote" rel="footnote" role="doc-noteref">3</a></sup>. Combining operator fusion with activation recomputation is not a new idea, while it was used for the kernels in Flash Attention, He et al.<sup id="fnref:4"><a href="#fn:4" class="footnote" rel="footnote" role="doc-noteref">4</a></sup> also show that in some more general settings, the combination of fusion and recomputation can actually speed up the forward + backward runtime of models due to the decreased memory throughput, and that selective fusion and recomputation can be determined at a graph’s compile time.</p>
+
+<p>For the RG-LRU, this technique is simple to apply manually. Instead of viewing the linear recurrence as one big computation graph, I found it mentally easier to split up the gradient computation into two phases: the first phase computes the linear recurrence parameters:</p>
+
+\[\begin{align*}
+\alpha_t &amp;= f(r_t)\\
+\beta_t &amp;= g(r_t,i_t,x_t)
+\end{align*}\]
+
+<p>Where $f$ and $g$ are computed as:</p>
+
+\[\begin{align*}
+f(r_t) &amp;= -8.0 * \sigma(r_t) * \text{softplus}(C)\\
+g(r_t,i_t,x_t) &amp;= \sqrt{1-f(r_t)^2}\odot x_t \odot \sigma(i_t)
+\end{align*}\]
+
+<p>And the second phase simply computes a standard diagonal linear recurrence:</p>
+
+\[\begin{align*}
+h_t = \alpha_t \odot h_{t-1} + \beta_t
+\end{align*}\]
+
+<p>Viewing the kernel this way allows us to manually compute the gradients of $a_{t}$ and $\beta_t$ with respect to the loss<sup id="fnref:5"><a href="#fn:5" class="footnote" rel="footnote" role="doc-noteref">5</a></sup> first as:</p>
+
+\[\begin{align*}
+\nabla_{h_T} L &amp;= \frac{\partial L}{\partial h_T} \\
+\nabla_{h_t} L &amp;= \frac{\partial h_{t+1}}{\partial h_t} \odot \nabla_{h_{t+1}} L + \frac{\partial L}{\partial h_t} \\
+&amp;= \alpha_{t+1} \odot \nabla_{h_{t+1}} L + \frac{\partial L}{\partial h_t} \\
+\nabla_{\alpha_t} L &amp;= \frac{\partial h_t}{\partial \alpha_t} \odot \nabla_{h_t} L = h_{t-1} \odot \nabla_{h_t} L \\
+\nabla_{\beta_t} L &amp;= \nabla_{h_t} L \\
+\nabla_{h_0} L &amp;= \frac{\partial h_1}{\partial h_0} \odot \nabla_{h_1} L = \alpha_1 \odot \nabla_{h_1} L
+\end{align*}\]
+
+<p>From here, the gradient computations for the parameters we optimize, \(x_t\), \(r_t\), \(i_t\), and \(C\) are simple elementwise gradient computations and left as an exercise 😉.</p>
+
+<p>The forward and backward passes for this kernel were implemented in Triton and using the same benchmark setup as above, (<code class="language-plaintext highlighter-rouge">R = 1024, B = 8</code> ), our fully-fused kernel with activation recomputation is fast:</p>
+
+<div style="text-align: center">
+<img src="img/scan_forward_backward.png" alt="forward_backward" style="width: 100%;" />
+</div>
+
+<p><em>All benchmarks were performed on a single 40GB A100 from Lambda Labs with PyTorch 2.5.1 and Triton 3.1.0.</em></p>
+
+<p>Similar to the forward pass kernel, for contexts greater than 4K tokens, we are once again faster than Flash Attention 2.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>Using this kernel I trained a 12L/768D Hawk model on 100B tokens of OpenWebText (<em>GPT2-small config</em>):</p>
+
+<div style="text-align: center">
+<img src="img/loss.png" alt="loss" style="width: 100%;" />
+</div>
+
+<p>If you’re interested in reading through the full Triton kernel it’s <a href="https://github.com/fattorib/hawk-pytorch/blob/main/hawk/scan_fused.py">here</a> and if you’re interested in my implementation of Hawk its <a href="https://github.com/fattorib/hawk-pytorch/tree/main">here</a>!</p>
+
+<h2 id="references">References</h2>
+
+<div class="footnotes" role="doc-endnotes">
+  <ol>
+    <li id="fn:1">
+      <p>De, Soham, et al. “Griffin: Mixing gated linear recurrences with local attention for efficient language models.” arXiv preprint arXiv:2402.19427 (2024). <a href="#fnref:1" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:2">
+      <p>Tillet, Philippe, Hsiang-Tsung Kung, and David Cox. “Triton: an intermediate language and compiler for tiled neural network computations.” Proceedings of the 3rd ACM SIGPLAN International Workshop on Machine Learning and Programming Languages. 2019. <a href="#fnref:2" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:3">
+      <p>Dao, Tri, et al. “Flashattention: Fast and memory-efficient exact attention with io-awareness.” Advances in Neural Information Processing Systems 35 (2022): 16344-16359. <a href="#fnref:3" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:4">
+      <p>He, Horace, and Shangdi Yu. “Transcending runtime-memory tradeoffs in checkpointing by being fusion aware.” Proceedings of Machine Learning and Systems 5 (2023): 414-427. <a href="#fnref:4" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:5">
+      <p>Martin, Eric, and Chris Cundy. “Parallelizing linear recurrent neural nets over sequence length.” arXiv preprint arXiv:1709.04057 (2017). <a href="#fnref:5" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+  </ol>
+</div>]]></content><author><name>Benjamin Fattori</name></author><category term="Triton" /><summary type="html"><![CDATA[A fast RG-LRU Kernel]]></summary></entry><entry><title type="html">ZeRO Optimizer Sharding with xmap and pjit</title><link href="https://fattorib.github.io/blog/2023/jax-pmap/" rel="alternate" type="text/html" title="ZeRO Optimizer Sharding with xmap and pjit" /><published>2023-03-31T15:59:00+00:00</published><updated>2023-03-31T15:59:00+00:00</updated><id>https://fattorib.github.io/blog/2023/jax-pmap</id><content type="html" xml:base="https://fattorib.github.io/blog/2023/jax-pmap/"><![CDATA[<p><strong>TL;DR</strong> I improve upon my earlier codebase by implementing ZeRO-1 optimizer sharding using a combination of <code class="language-plaintext highlighter-rouge">xmap</code> and <code class="language-plaintext highlighter-rouge">pjit</code>. The resultant method is more performant and scales better across multiple TPU hosts achieving 67% MFU on a TPU v3-32. I use this method to train a 1.3B parameter decoder-only transformer on 200B tokens. The codebase I wrote can be found <a href="https://github.com/fattorib/ZeRO-transformer">here</a>.</p>
 
 <h2 id="background">Background</h2>
 
 <p>For the past 4 months, I have been spending time learning more about jax and the parallelism APIs it offers. The first large project I completed was an implementation of <a href="https://arxiv.org/abs/1910.02054">ZeRO-1</a> optimizer sharding using the <code class="language-plaintext highlighter-rouge">pmap</code> operator. Using this, I was able to train a 1.1B parameter decoder-only transformer on a TPU v3-32, by using 8-way optimizer state sharding on each of the TPU hosts.</p>
 
-<p>While this was successful, using <code class="language-plaintext highlighter-rouge">pmap</code> requires a lot of manual array handling to ensure that everything passed into a pmapped function can be distributed across the local devices. In my code, this resulted in multiple helper functions solely for sharding/unsharding arrays. In retrospect, these functions were more of a performance bottleneck than I had originally expected. In addition, without some complicated, and error-prone, communication code, extending the optimizer sharding across hosts would be very difficult<sup id="fnref:1" role="doc-noteref"><a href="#fn:1" class="footnote" rel="footnote">1</a></sup>.</p>
+<p>While this was successful, using <code class="language-plaintext highlighter-rouge">pmap</code> requires a lot of manual array handling to ensure that everything passed into a pmapped function can be distributed across the local devices. In my code, this resulted in multiple helper functions solely for sharding/unsharding arrays. In retrospect, these functions were more of a performance bottleneck than I had originally expected. In addition, without some complicated, and error-prone, communication code, extending the optimizer sharding across hosts would be very difficult<sup id="fnref:1"><a href="#fn:1" class="footnote" rel="footnote" role="doc-noteref">1</a></sup>.</p>
 
 <h2 id="zero-optimizer-sharding-overview">ZeRO Optimizer Sharding Overview</h2>
 
@@ -34,7 +202,7 @@
 
 <p>Because xmap and pjit arrays are of the same type, it is possible to pass the output from an xmapped function into a pjitted function. The communication pattern for the gradient accumulation code is straightforward: we iterate over <code class="language-plaintext highlighter-rouge">gradient_accumulation_steps</code> microbatches and have every TPU core compute its own local set of gradients, once that is completed, we use a single <code class="language-plaintext highlighter-rouge">pmean</code> to synchronize gradients across all TPU cores and we’re done!</p>
 
-<p>From here, we can take these output gradients and shard them to match the <code class="language-plaintext highlighter-rouge">PartitionSpec</code> of the optimizer states. Remember from above, we’ve distributed these across all available TPU cores (the easiest way to do this is to just use <code class="language-plaintext highlighter-rouge">ParitionSpec('dp', None)</code> or <code class="language-plaintext highlighter-rouge">ParitionSpec('dp')</code> to shard the first axis of all weights across the data parallel axis, in this case denoted by <code class="language-plaintext highlighter-rouge">'dp'</code>. In the end, the resulting code is compact and easy-to-follow:</p>
+<p>From here, we can take these output gradients and shard them to match the <code class="language-plaintext highlighter-rouge">PartitionSpec</code> of the optimizer states. Remember from above, we’ve distributed these across all available TPU cores the easiest way to do this is to just use <code class="language-plaintext highlighter-rouge">ParitionSpec('dp', None)</code> or <code class="language-plaintext highlighter-rouge">ParitionSpec('dp')</code> to shard the first axis of all weights across the data parallel axis, in this case denoted by <code class="language-plaintext highlighter-rouge">'dp'</code>. In the end, the resulting code is compact and easy-to-follow:</p>
 
 <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">in_axes</span> <span class="o">=</span><span class="p">(</span>
     <span class="p">[...],</span> 
@@ -80,7 +248,9 @@
 
 <p>The training code was implemented in <a href="https://github.com/google/flax">Flax</a> with optimizers from <a href="https://github.com/deepmind/optax">Optax</a>. For reproducibility, the following version of all packages used were:</p>
 <details open="">
+```bash
 flax==0.6.3, optax==0.1.3, jax[tpu]==0.4.6
+```
 </details>
 
 <h3 id="model">Model</h3>
@@ -242,8 +412,8 @@ flax==0.6.3, optax==0.1.3, jax[tpu]==0.4.6
 
 <div class="footnotes" role="doc-endnotes">
   <ol>
-    <li id="fn:1" role="doc-endnote">
+    <li id="fn:1">
       <p>As and aside, its pretty crazy that <a href="https://arxiv.org/abs/2112.11446">Gopher</a> was trained with tensor-parallelism solely using <code class="language-plaintext highlighter-rouge">pmap</code>! <a href="#fnref:1" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
     </li>
   </ol>
-</div>]]></content><author><name>Benjamin Fattori</name></author><category term="jax" /><summary type="html"><![CDATA[ZeRO-1 optimizer sharding with xmap and pjit]]></summary></entry></feed>
+</div>]]></content><author><name>Benjamin Fattori</name></author><category term="jax" /><summary type="html"><![CDATA[TL;DR I improve upon my earlier codebase by implementing ZeRO-1 optimizer sharding using a combination of xmap and pjit. The resultant method is more performant and scales better across multiple TPU hosts achieving 67% MFU on a TPU v3-32. I use this method to train a 1.3B parameter decoder-only transformer on 200B tokens. The codebase I wrote can be found here.]]></summary></entry></feed>

@@ -10,7 +10,8 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>ZeRO Optimizer Sharding with xmap and pjit | Benjamin  Fattori</title>
     <meta name="author" content="Benjamin  Fattori">
-    <meta name="description" content="ZeRO-1 optimizer sharding with xmap and pjit">
+    <meta name="description" content="A simple, whitespace theme for academics. Based on [*folio](https://github.com/bogoli/-folio) design.
+">
     <meta name="keywords" content="jekyll, jekyll-theme, academic-website, portfolio-website">
 
 
@@ -67,12 +68,12 @@
 <d-front-matter>
     <script async type="text/json">{
       "title": "ZeRO Optimizer Sharding with xmap and pjit",
-      "description": "ZeRO-1 optimizer sharding with xmap and pjit",
+      "description": "",
       "published": "March 31, 2023",
       "authors": [
         {
           "author": "Benjamin Fattori",
-          "authorURL": "https://benfattori.com/",
+          "authorURL": "fattorib.github.io",
           "affiliations": [
             {
               "name": "Independent",
@@ -157,7 +158,7 @@
 
       <d-title>
         <h1>ZeRO Optimizer Sharding with xmap and pjit</h1>
-        <p>ZeRO-1 optimizer sharding with xmap and pjit</p>
+        <p></p>
       </d-title>
 
       <d-byline></d-byline>
@@ -171,7 +172,7 @@
 
 <p>For the past 4 months, I have been spending time learning more about jax and the parallelism APIs it offers. The first large project I completed was an implementation of <a href="https://arxiv.org/abs/1910.02054" rel="external nofollow noopener" target="_blank">ZeRO-1</a> optimizer sharding using the <code class="language-plaintext highlighter-rouge">pmap</code> operator. Using this, I was able to train a 1.1B parameter decoder-only transformer on a TPU v3-32, by using 8-way optimizer state sharding on each of the TPU hosts.</p>
 
-<p>While this was successful, using <code class="language-plaintext highlighter-rouge">pmap</code> requires a lot of manual array handling to ensure that everything passed into a pmapped function can be distributed across the local devices. In my code, this resulted in multiple helper functions solely for sharding/unsharding arrays. In retrospect, these functions were more of a performance bottleneck than I had originally expected. In addition, without some complicated, and error-prone, communication code, extending the optimizer sharding across hosts would be very difficult<sup id="fnref:1" role="doc-noteref"><a href="#fn:1" class="footnote" rel="footnote">1</a></sup>.</p>
+<p>While this was successful, using <code class="language-plaintext highlighter-rouge">pmap</code> requires a lot of manual array handling to ensure that everything passed into a pmapped function can be distributed across the local devices. In my code, this resulted in multiple helper functions solely for sharding/unsharding arrays. In retrospect, these functions were more of a performance bottleneck than I had originally expected. In addition, without some complicated, and error-prone, communication code, extending the optimizer sharding across hosts would be very difficult<sup id="fnref:1"><a href="#fn:1" class="footnote" rel="footnote" role="doc-noteref">1</a></sup>.</p>
 
 <h2 id="zero-optimizer-sharding-overview">ZeRO Optimizer Sharding Overview</h2>
 
@@ -201,7 +202,7 @@
 
 <p>Because xmap and pjit arrays are of the same type, it is possible to pass the output from an xmapped function into a pjitted function. The communication pattern for the gradient accumulation code is straightforward: we iterate over <code class="language-plaintext highlighter-rouge">gradient_accumulation_steps</code> microbatches and have every TPU core compute its own local set of gradients, once that is completed, we use a single <code class="language-plaintext highlighter-rouge">pmean</code> to synchronize gradients across all TPU cores and we’re done!</p>
 
-<p>From here, we can take these output gradients and shard them to match the <code class="language-plaintext highlighter-rouge">PartitionSpec</code> of the optimizer states. Remember from above, we’ve distributed these across all available TPU cores (the easiest way to do this is to just use <code class="language-plaintext highlighter-rouge">ParitionSpec('dp', None)</code> or <code class="language-plaintext highlighter-rouge">ParitionSpec('dp')</code> to shard the first axis of all weights across the data parallel axis, in this case denoted by <code class="language-plaintext highlighter-rouge">'dp'</code>. In the end, the resulting code is compact and easy-to-follow:</p>
+<p>From here, we can take these output gradients and shard them to match the <code class="language-plaintext highlighter-rouge">PartitionSpec</code> of the optimizer states. Remember from above, we’ve distributed these across all available TPU cores the easiest way to do this is to just use <code class="language-plaintext highlighter-rouge">ParitionSpec('dp', None)</code> or <code class="language-plaintext highlighter-rouge">ParitionSpec('dp')</code> to shard the first axis of all weights across the data parallel axis, in this case denoted by <code class="language-plaintext highlighter-rouge">'dp'</code>. In the end, the resulting code is compact and easy-to-follow:</p>
 
 <div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">in_axes</span> <span class="o">=</span><span class="p">(</span>
     <span class="p">[...],</span> 
@@ -247,7 +248,9 @@
 
 <p>The training code was implemented in <a href="https://github.com/google/flax" rel="external nofollow noopener" target="_blank">Flax</a> with optimizers from <a href="https://github.com/deepmind/optax" rel="external nofollow noopener" target="_blank">Optax</a>. For reproducibility, the following version of all packages used were:</p>
 <details open="">
+```bash
 flax==0.6.3, optax==0.1.3, jax[tpu]==0.4.6
+```
 </details>
 
 <h3 id="model">Model</h3>
@@ -409,7 +412,7 @@ flax==0.6.3, optax==0.1.3, jax[tpu]==0.4.6
 
 <div class="footnotes" role="doc-endnotes">
   <ol>
-    <li id="fn:1" role="doc-endnote">
+    <li id="fn:1">
       <p>As and aside, its pretty crazy that <a href="https://arxiv.org/abs/2112.11446" rel="external nofollow noopener" target="_blank">Gopher</a> was trained with tensor-parallelism solely using <code class="language-plaintext highlighter-rouge">pmap</code>! <a href="#fnref:1" class="reversefootnote" role="doc-backlink">↩</a></p>
     </li>
   </ol>
@@ -425,13 +428,13 @@ flax==0.6.3, optax==0.1.3, jax[tpu]==0.4.6
       <d-bibliography src="/assets/bibliography/"></d-bibliography>
 </div>
 
-    <!-- Footer -->    
-    <footer class="fixed-bottom">
-      <div class="container mt-0">
-        © Copyright 2024 Benjamin  Fattori. Powered by <a href="https://jekyllrb.com/" target="_blank" rel="external nofollow noopener">Jekyll</a> with <a href="https://github.com/alshedivat/al-folio" rel="external nofollow noopener" target="_blank">al-folio</a> theme. Hosted by <a href="https://pages.github.com/" target="_blank" rel="external nofollow noopener">GitHub Pages</a>.
-Last updated: September 25, 2024.
-      </div>
-    </footer>
+    <!-- Footer -->
+<footer class="fixed-bottom">
+  <div class="container mt-0">
+    All content licensed under <a href="https://creativecommons.org/licenses/by/4.0/" rel="external nofollow noopener" target="_blank">CC-BY 4.0</a> 2024 Benjamin  Fattori. Powered by <a href="https://jekyllrb.com/" target="_blank" rel="external nofollow noopener">Jekyll</a> with <a href="https://github.com/alshedivat/al-folio" rel="external nofollow noopener" target="_blank">al-folio</a> theme. Hosted by <a href="https://pages.github.com/" target="_blank" rel="external nofollow noopener">GitHub Pages</a>.
+Last updated: December 26, 2024.
+  </div>
+</footer>
 
     <!-- Bootsrap & MDB scripts -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.1/dist/js/bootstrap.bundle.min.js" integrity="sha256-fgLAgv7fyCGopR/gBNq2iW3ZKIdqIcyshnUULC4vex8=" crossorigin="anonymous"></script>
