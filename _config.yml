@@ -6,7 +6,7 @@ title: blank # the website title (if blank, full name will be used instead)
 first_name: Benjamin
 last_name: Fattori
 description: > # the ">" symbol means to ignore newlines until "footer_text:"
-  A simple, whitespace theme for academics. Based on [*folio](https://github.com/bogoli/-folio) design.
+  Based on [*folio](https://github.com/bogoli/-folio) design.
 footer_text: >
   Powered by <a href="https://jekyllrb.com/" target="_blank">Jekyll</a> with <a href="https://github.com/alshedivat/al-folio">al-folio</a> theme.
   Hosted by <a href="https://pages.github.com/" target="_blank">GitHub Pages</a>.
@@ -104,11 +104,15 @@ discord_id: # your discord id (18-digit unique numerical identifier)
 blog_name: posts
 blog_nav_title: posts # your blog must have a title for it to be displayed in the nav bar
 blog_description: 
-permalink: /blog/:year/:title/
 
 # Pagination
 pagination:
   enabled: true
+  collection: posts
+  per_page: 5  # or your preferred number
+  sort_field: date
+  sort_reverse: true
+  verbose: true
 
 related_blog_posts:
   enabled: true
@@ -134,6 +138,10 @@ collections:
   projects:
     output: true
     permalink: /projects/:path/
+  posts:
+    output: true
+    permalink: /blog/:year/:title/
+
 
 news_scrollable: true # adds a vertical scroll bar if there are more than 3 news items
 news_limit: 5 # leave blank to include all the news in the `_news` folder
@@ -348,3 +356,5 @@ mdb:
 medium_zoom:
   version: "1.0.8"
   integrity: "sha256-7PhEpEWEW0XXQ0k6kQrPKwuoIomz8R8IYyuU1Qew4P8="
+
+
