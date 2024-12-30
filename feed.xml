@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en"><generator uri="https://jekyllrb.com/" version="4.3.4">Jekyll</generator><link href="https://fattorib.github.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://fattorib.github.io/" rel="alternate" type="text/html" hreflang="en" /><updated>2024-12-26T15:16:28+00:00</updated><id>https://fattorib.github.io/feed.xml</id><title type="html">blank</title><subtitle>Based on [*folio](https://github.com/bogoli/-folio) design.
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en"><generator uri="https://jekyllrb.com/" version="4.3.4">Jekyll</generator><link href="https://fattorib.github.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://fattorib.github.io/" rel="alternate" type="text/html" hreflang="en" /><updated>2024-12-30T23:01:54+00:00</updated><id>https://fattorib.github.io/feed.xml</id><title type="html">blank</title><subtitle>Based on [*folio](https://github.com/bogoli/-folio) design.
 </subtitle><entry><title type="html">A fast RG-LRU Kernel</title><link href="https://fattorib.github.io/blog/2024/rg-lru/" rel="alternate" type="text/html" title="A fast RG-LRU Kernel" /><published>2024-12-26T00:00:00+00:00</published><updated>2024-12-26T00:00:00+00:00</updated><id>https://fattorib.github.io/blog/2024/rg-lru</id><content type="html" xml:base="https://fattorib.github.io/blog/2024/rg-lru/"><![CDATA[<h1 id="a-fast-rg-lru-kernel">A fast RG-LRU Kernel</h1>
 
 <p><strong>TL;DR:</strong> I develop a IO-aware kernel for the RG-LRU in Triton. When training on sequences greater than 4K tokens, the kernel is faster than PyTorch’s Flash Attention 2 implementation.</p>
@@ -80,7 +80,7 @@ R: Recurrent dimension
   <span class="c1"># write h_t_BR to HBM
 </span></code></pre></div></div>
 
-<p>Assuming half-precision weights and activations, the unfused RG-LRU layer reads <code class="language-plaintext highlighter-rouge">26BLR + 4RR + 2R</code> bytes and writes <code class="language-plaintext highlighter-rouge">22BLR</code> bytes for a total of <code class="language-plaintext highlighter-rouge">48BLR + 4RR + 2R</code> bytes. The fused RG-LRU layer reads <code class="language-plaintext highlighter-rouge">4BLR + 4RR + 2R</code> bytes and writes <code class="language-plaintext highlighter-rouge">2BLR</code> bytes for a total of <code class="language-plaintext highlighter-rouge">6BLR + 4RR + 2R</code>. For all models considered, L will be greater than or equal to R and B &gt; 1. So while the memory complexity for both kernels is still $\mathcal{O}(BLR)$, the fused kernel reduces the constant factor from $48$ to $6$ leading to the fused kernel reading and writing roughly one eighth the bytes of the unfused kernel. As the runtime of this layer is memory bandwidth bound, we can expect large speedups. When implemented in Triton, this speedup over the initial kernel is large and for contexts greater than 6K tokens, we are even faster than PyTorch’s Flash Attention 2 (called via <code class="language-plaintext highlighter-rouge">scaled_dot_product_attention</code>):</p>
+<p>Assuming half-precision weights and activations, the unfused RG-LRU layer reads <code class="language-plaintext highlighter-rouge">26BLR + 4RR + 2R</code> bytes and writes <code class="language-plaintext highlighter-rouge">22BLR</code> bytes for a total of <code class="language-plaintext highlighter-rouge">48BLR + 4RR + 2R</code> bytes. The fused RG-LRU layer reads <code class="language-plaintext highlighter-rouge">4BLR + 4RR + 2R</code> bytes and writes <code class="language-plaintext highlighter-rouge">2BLR</code> bytes for a total of <code class="language-plaintext highlighter-rouge">6BLR + 4RR + 2R</code>. For all models considered, L will be greater than or equal to R and B &gt; 1. So while the memory complexity for both kernels is still \(\mathcal{O}(BLR)\), the fused kernel reduces the constant factor from \(48\) to \(6\) leading to the fused kernel reading and writing roughly one eighth the bytes of the unfused kernel. As the runtime of this layer is memory bandwidth bound, we can expect large speedups. When implemented in Triton, this speedup over the initial kernel is large and for contexts greater than 6K tokens, we are even faster than PyTorch’s Flash Attention 2 (called via <code class="language-plaintext highlighter-rouge">scaled_dot_product_attention</code>):</p>
 
 <div style="text-align: center">
 <img src="img/scan_forward.png" alt="forward" style="width: 100%;" />
@@ -101,7 +101,7 @@ R: Recurrent dimension
 \beta_t &amp;= g(r_t,i_t,x_t)
 \end{align*}\]
 
-<p>Where $f$ and $g$ are computed as:</p>
+<p>Where \(f\) and \(g\) are computed as:</p>
 
 \[\begin{align*}
 f(r_t) &amp;= -8.0 * \sigma(r_t) * \text{softplus}(C)\\
@@ -114,7 +114,7 @@ g(r_t,i_t,x_t) &amp;= \sqrt{1-f(r_t)^2}\odot x_t \odot \sigma(i_t)
 h_t = \alpha_t \odot h_{t-1} + \beta_t
 \end{align*}\]
 
-<p>Viewing the kernel this way allows us to manually compute the gradients of $a_{t}$ and $\beta_t$ with respect to the loss<sup id="fnref:5"><a href="#fn:5" class="footnote" rel="footnote" role="doc-noteref">5</a></sup> first as:</p>
+<p>Viewing the kernel this way allows us to manually compute the gradients of \(a_{t}\) and \(\beta_t\) with respect to the loss<sup id="fnref:5"><a href="#fn:5" class="footnote" rel="footnote" role="doc-noteref">5</a></sup> first as:</p>
 
 \[\begin{align*}
 \nabla_{h_T} L &amp;= \frac{\partial L}{\partial h_T} \\
